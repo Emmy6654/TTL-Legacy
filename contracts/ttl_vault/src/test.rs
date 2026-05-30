@@ -171,6 +171,31 @@ fn test_donate_to_charity_requires_expiry() {
 }
 
 #[test]
+fn test_burn_vault_tokens_deflates_balance() {
+    let (env, owner, beneficiary, _, token_address, client) = setup();
+
+    let vault_id = client.create_vault(&owner, &beneficiary, &100u64, &None);
+    client.deposit(&vault_id, &owner, &500i128);
+    env.ledger().with_mut(|l| l.timestamp += 200);
+
+    client.burn_vault_tokens(&vault_id);
+
+    let token_client = token::Client::new(&env, &token_address);
+    assert_eq!(token_client.balance(&env.current_contract_address()), 0i128);
+    assert_eq!(client.get_vault(&vault_id).balance, 0i128);
+    assert_eq!(client.get_release_status(&vault_id), ReleaseStatus::Released);
+}
+
+#[test]
+fn test_burn_vault_tokens_requires_expiry() {
+    let (env, owner, beneficiary, _, _, client) = setup();
+
+    let vault_id = client.create_vault(&owner, &beneficiary, &100u64, &None);
+    let err = client.try_burn_vault_tokens(&vault_id).unwrap_err().unwrap();
+    assert_eq!(err, soroban_sdk::Error::from_contract_error(16));
+}
+
+#[test]
 fn test_batch_deposit_updates_multiple_vaults() {
     let (env, owner, beneficiary, _, token_address, client) = setup();
 

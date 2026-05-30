@@ -121,6 +121,7 @@ pub const TOKEN_UNSTAKING_TOPIC: Symbol = symbol_short!("tok_ust");
 pub const YIELD_DISTRIBUTED_TOPIC: Symbol = symbol_short!("yld_dst");
 pub const YIELD_REINVESTED_TOPIC: Symbol = symbol_short!("yld_rin");
 pub const DONATION_TOPIC: Symbol = symbol_short!("donate");
+pub const BURN_TOPIC: Symbol = symbol_short!("burn");
 // Wrapped token registration for cross-chain compatibility
 pub const WRAPPED_TOKEN_REGISTERED_TOPIC: Symbol = symbol_short!("wrp_reg");
 pub const WRAPPED_TOKEN_UNREGISTERED_TOPIC: Symbol = symbol_short!("wrp_unr");

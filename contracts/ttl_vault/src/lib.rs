@@ -15,7 +15,7 @@ use types::{
     ArchivedVaultInfo, OwnershipTransferRequest, PendingBeneficiaryUpdate, AuditEntry, MultiSigConfig, MultiSigProposal,
     MultiSigOperation, ProposalStatus, PasskeyUsageEntry, BeneficiaryStatus, BridgeConfig,
     TokenConversion, TokenStaking, YieldDistributionMode, YieldDistributionConfig,
-    DONATION_TOPIC,
+    DONATION_TOPIC, BURN_TOPIC,
     StateTransitionEntry, OwnershipProof, IntegrityReport, VaultStatusSummary,
     TtlBorrowRecord, BeneficiaryCommitment,
     GeoCheckInEntry,
@@ -202,6 +202,7 @@ pub enum ContractError {
     BonusNotEnabled = 73,
     TokenNotWhitelisted = 74,
     DonationNotAllowed = 75,
+    BurnNotAllowed = 76,
 }
 
 #[contract]
@@ -1900,6 +1901,43 @@ impl TtlVaultContract {
             env.storage().persistent().remove(&dup_key);
             env.events().publish((VAULT_ARCHIVED_TOPIC, vault_id), (vault_id, ReleaseStatus::Released));
         }
+        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+    }
+
+    pub fn burn_vault_tokens(env: Env, vault_id: u64) {
+        Self::assert_not_paused(&env);
+        Self::try_restore_archived_vault(&env, vault_id);
+        let mut vault = Self::load_vault(&env, vault_id);
+        vault.owner.require_auth();
+        if vault.status != ReleaseStatus::Locked {
+            panic_with_error!(&env, ContractError::AlreadyReleased);
+        }
+        if !Self::is_expired(env.clone(), vault_id) {
+            panic_with_error!(&env, ContractError::NotExpired);
+        }
+        let total = vault.balance;
+        if total == 0 {
+            panic_with_error!(&env, ContractError::EmptyVault);
+        }
+        let has_vesting = env.storage().persistent().has(&DataKey::VestingSchedule(vault_id));
+        let has_milestone_vesting = env.storage().persistent().has(&DataKey::MilestoneVestingSchedule(vault_id));
+        if has_vesting || has_milestone_vesting {
+            panic_with_error!(&env, ContractError::BurnNotAllowed);
+        }
+        let token_client = token::Client::new(&env, &vault.token_address);
+        token_client.burn(&env.current_contract_address(), &total);
+        env.events().publish((BURN_TOPIC,), (vault_id, total));
+        vault.balance = 0;
+        vault.status = ReleaseStatus::Released;
+        Self::record_state_transition(&env, vault_id, ReleaseStatus::Locked, ReleaseStatus::Released, &vault.owner);
+        Self::save_vault(&env, vault_id, &vault);
+        Self::append_activity_log(&env, vault_id, "burn_vault_tokens", &vault.owner, "");
+        let arch_key = DataKey::ArchivedVault(vault_id);
+        env.storage().persistent().set(&arch_key, &ArchivedVaultInfo(vault.clone()));
+        env.storage().persistent().extend_ttl(&arch_key, VAULT_TTL_THRESHOLD, VAULT_TTL_LEDGERS);
+        let dup_key = DataKey::VaultDuplicate(vault.owner.clone(), vault.beneficiary.clone(), vault.check_in_interval);
+        env.storage().persistent().remove(&dup_key);
+        env.events().publish((VAULT_ARCHIVED_TOPIC, vault_id), (vault_id, ReleaseStatus::Released));
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
     }
 
