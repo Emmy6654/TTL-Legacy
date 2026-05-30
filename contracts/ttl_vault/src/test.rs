@@ -144,6 +144,33 @@ fn test_get_release_status_view() {
 }
 
 #[test]
+fn test_donate_to_charity_transfers_funds_to_charity() {
+    let (env, owner, beneficiary, _, token_address, client) = setup();
+    let charity = Address::generate(&env);
+
+    let vault_id = client.create_vault(&owner, &beneficiary, &100u64, &None);
+    client.deposit(&vault_id, &owner, &500i128);
+    env.ledger().with_mut(|l| l.timestamp += 200);
+
+    client.donate_to_charity(&vault_id, &charity);
+
+    let token_client = token::Client::new(&env, &token_address);
+    assert_eq!(token_client.balance(&charity), 500i128);
+    assert_eq!(client.get_vault(&vault_id).balance, 0i128);
+    assert_eq!(client.get_release_status(&vault_id), ReleaseStatus::Released);
+}
+
+#[test]
+fn test_donate_to_charity_requires_expiry() {
+    let (env, owner, beneficiary, _, _, client) = setup();
+    let charity = Address::generate(&env);
+
+    let vault_id = client.create_vault(&owner, &beneficiary, &100u64, &None);
+    let err = client.try_donate_to_charity(&vault_id, &charity).unwrap_err().unwrap();
+    assert_eq!(err, soroban_sdk::Error::from_contract_error(16));
+}
+
+#[test]
 fn test_batch_deposit_updates_multiple_vaults() {
     let (env, owner, beneficiary, _, token_address, client) = setup();
 
